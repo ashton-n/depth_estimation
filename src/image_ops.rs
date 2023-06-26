@@ -1,24 +1,13 @@
 extern crate image;
 
 use std::{path::PathBuf, time::Instant};
-
-use image::{ ImageBuffer, Pixel, DynamicImage, Rgb, GenericImage, Luma, RgbImage, ImageResult, Rgb32FImage};
+use image::{ ImageBuffer, Pixel, DynamicImage, Rgb, GenericImage, Luma, GenericImageView};
 use rayon::prelude::*;
 
-use crate::read_from_files::{self, get_dmin};
-
-use imageproc::contrast::{equalize_histogram, stretch_contrast};
-// use image2::io::pfm::{save_pfm, PfmData};
-// NB!! Requires "sudo apt install libopenimageio-dev"
-// NB!! Requires +1
-// NB!! Requires +2
-
-//use opencv::core::{Mat, CV_32FC1};
-//use opencv::imgcodecs::imwrite;
-// NB!! Requires "apt install libopencv-dev clang libclang-dev"
+use crate::read_from_files;
 
 
-//pub fn load_img()
+//use imageproc::contrast::{equalize_histogram, stretch_contrast};
 
 pub fn pad_img(img: &ImageBuffer<Luma<u8>, Vec<u8>>, border_depth: &u32) -> ImageBuffer<Luma<u8>, Vec<u8>>{
 
@@ -32,7 +21,7 @@ pub fn pad_img(img: &ImageBuffer<Luma<u8>, Vec<u8>>, border_depth: &u32) -> Imag
     image_buf
 }
 
-pub fn get_pxl_block_idxs(img: &ImageBuffer<Luma<u8>, Vec<u8>>, kernal_size: &u32) -> Vec<Vec<Vec<Vec<u32>>>> {
+/*pub fn get_pxl_block_idxs(img: &ImageBuffer<Luma<u8>, Vec<u8>>, kernal_size: &u32) -> Vec<Vec<Vec<Vec<u32>>>> {
     //img should be unpadded
     let pxl_block_idxs = img.enumerate_pixels().map(|(x, y, _ )| {
         let x_vec = (x..(x + kernal_size)).collect::<Vec<u32>>();
@@ -43,10 +32,9 @@ pub fn get_pxl_block_idxs(img: &ImageBuffer<Luma<u8>, Vec<u8>>, kernal_size: &u3
     pxl_block_idxs.chunks(img.width() as usize)
                   .map(|x| x.to_vec())
                   .collect::<Vec<Vec<Vec<Vec<u32>>>>>()
-    
-}
+}*/
 
-pub fn get_pxl_blocks_vec(img: &ImageBuffer<Luma<u8>, Vec<u8>>, kernal_size: &u32) -> Vec<Vec<Vec<u8>>> {
+/*pub fn get_pxl_blocks_vec(img: &ImageBuffer<Luma<u8>, Vec<u8>>, kernal_size: &u32) -> Vec<Vec<Vec<u8>>> {
     // this fetches a vector of sub image blocks, where each block is kernel_size x kernel_size in size
     // NOTE! img gets padded with zeros
 
@@ -79,7 +67,7 @@ pub fn get_pxl_blocks_vec(img: &ImageBuffer<Luma<u8>, Vec<u8>>, kernal_size: &u3
 
     }).collect::<Vec<Vec<Vec<u8>>>>();
     vec_blocks
-}
+}*/
 
 pub fn validate_block_size(block_size: &u32) -> bool {
     //println!("{:?}", kernal_size);
@@ -114,7 +102,7 @@ pub fn get_channels(img: &DynamicImage) ->
 
 }
 
-pub fn get_similarity_value(left_block: &Vec<u8>, right_block: &Vec<u8>) -> i32 {
+/*pub fn get_similarity_value(left_block: &Vec<u8>, right_block: &Vec<u8>) -> i32 {
     // this function returns the similarity value between two blocks
     // the similarity value is the sum of the absolute difference between each pixel in the block
     // the similarity value is a u8, so it is between 0 and 255
@@ -126,9 +114,9 @@ pub fn get_similarity_value(left_block: &Vec<u8>, right_block: &Vec<u8>) -> i32 
                                         })
                                      .sum::<i32>();
     similarity_value
-}
+}*/
 
-pub fn print_img_buf_luma_u8(img: &ImageBuffer<Luma<u8>, Vec<u8>>) {
+/*pub fn print_img_buf_luma_u8(img: &ImageBuffer<Luma<u8>, Vec<u8>>) {
     println!("");
     img.rows().for_each(|row|{
         row.into_iter().for_each(|pxl| {
@@ -137,11 +125,13 @@ pub fn print_img_buf_luma_u8(img: &ImageBuffer<Luma<u8>, Vec<u8>>) {
         println!("");
     });
     println!("");
-}
+}*/
 
 pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>, 
     right_img: &ImageBuffer<Luma<u8>, Vec<u8>>, 
-    block_size: &u32) 
+    block_size: &u32,
+    scaling_factor: &f32
+) 
     -> Vec<Vec<u32>> {
 
     assert!(validate_block_size(block_size), "in Correspondence Matching");
@@ -169,18 +159,20 @@ pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>,
                 
                 let left_block_vals = (ref_y..ref_y + block_size).flat_map(|padded_y|{
                     let left_val_row = (ref_x..ref_x + block_size).map(|padded_x|{
+                        
                         let left_val = left_padded.get_pixel(padded_x, padded_y)[0];
-                                //.expect("Invalid pixel co-ords")[0];
-                        left_val    
+                        left_val
+
                     }).collect::<Vec<u8>>();
                     left_val_row
                 }).collect::<Vec<u8>>();
 
                 let right_block_vals = (ref_y..ref_y + block_size).map(|padded_y|{
                     let right_val_row = (cmp_block_x..cmp_block_x + block_size).map(|padded_x|{
+                        
                         let right_val = right_padded.get_pixel(padded_x, padded_y)[0];
-                                //.expect("Invalid pixel co-ords")[0];
                         right_val    
+
                     }).collect::<Vec<u8>>();
                     right_val_row
                 }).flatten().collect::<Vec<u8>>();
@@ -198,7 +190,7 @@ pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>,
             }).min_by_key(|(_cmp_block_x, sad_score_block)| sad_score_block.clone()).unwrap().0;
             
             let disparity = ref_x.abs_diff(lowest_sad_block_idx); 
-            disparity*3
+            (disparity as f32 * scaling_factor).round() as u32
 
         }).collect::<Vec<u32>>();//pixel disparity (keep u32 -?> dependant on image width size)
         //println!("[find_row_disp_per_pxl] Completed in: {:?}", find_row_disp_per_pxl.elapsed());
@@ -209,25 +201,26 @@ pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>,
 
 }
 
-pub fn calc_depthmap(disparity_map: Vec<Vec<u32>>, 
+pub fn calc_depthmap(disparity_map: &Vec<Vec<u32>>, 
                      focal_length: &u32, 
                      baseline: &u32, 
-                     dmin: &u32) 
+                     dmin: &u32,
+                     scaling_ratio: &f32) 
     -> Vec<Vec<u32>> {
     
-
     let height = disparity_map.len() as u32;
     let width  = disparity_map[0].len() as u32; // also the max disparity possible
+
+    //let scaling_ratio = *fullsize_width as f32 / width as f32;
 
     let depth_map = (0..height).map(|y| {
         (0..width).map(|x| {
             let disparity = disparity_map[y as usize][x as usize];
 
-            
             // (width + dmin) ->  inverts the rest is calculating depth map
             //let depth = (width + dmin) - ((baseline * focal_length)/3) / ((dmin + (disparity)/3));
             //let depth = ((baseline * focal_length)/3) / ((dmin + (disparity)/3)); //  <- best
-            let depth = ((baseline * focal_length)/3) / ((dmin + (disparity)/3));
+            let depth = (((baseline * focal_length) as f32 / scaling_ratio) / ((*dmin as f32 + (disparity) as f32 / scaling_ratio))) as u32;
             
             depth
             //}
@@ -236,39 +229,39 @@ pub fn calc_depthmap(disparity_map: Vec<Vec<u32>>,
     depth_map
 }
 
-fn vec2image(red_pixels: &Vec<Vec<u32>>, green_pixels: &Vec<Vec<u32>>, blue_pixels: &Vec<Vec<u32>>) -> DynamicImage {
+fn vec_to_rgb8_img(red_pixels: &Vec<Vec<u32>>, green_pixels: &Vec<Vec<u32>>, blue_pixels: &Vec<Vec<u32>>) -> DynamicImage {
     let height = red_pixels.len();
     let width = red_pixels[0].len();
-    println!("{width} x {height}");
+    //println!("{width} x {height}");
 
     let mut image_buffer: ImageBuffer<Rgb<u8>, Vec<u8>> =
         ImageBuffer::new(width as u32, height as u32);
 
-    let r_max = red_pixels.iter().flatten().max().unwrap();
-    let r_min = red_pixels.iter().flatten().min().unwrap();
+    //let r_max = red_pixels.iter().flatten().max().unwrap();
+    //let r_min = red_pixels.iter().flatten().min().unwrap();
 
-    let g_max = green_pixels.iter().flatten().max().unwrap();
-    let g_min = green_pixels.iter().flatten().min().unwrap();
+    //let g_max = green_pixels.iter().flatten().max().unwrap();
+    //let g_min = green_pixels.iter().flatten().min().unwrap();
 
-    let b_max = blue_pixels.iter().flatten().max().unwrap();
-    let b_min = blue_pixels.iter().flatten().min().unwrap();
+    //let b_max = blue_pixels.iter().flatten().max().unwrap();
+    //let b_min = blue_pixels.iter().flatten().min().unwrap();
 
 
     (0..height).for_each(|y|{
         (0..width).for_each(|x|{
             let red = red_pixels[y][x];
-            let r_val = ((red - r_min) * 255_u32) / (r_max - r_min);
-            let r_val = r_val.to_be_bytes();
+            //let r_val = ((red - r_min) * 255_u32) / (r_max - r_min);
+            let r_val = red.to_be_bytes();
             let r_val = r_val[3];
 
             let green = green_pixels[y][x];
-            let g_val = ((green - g_min) * 255_u32) / (g_max - g_min);
-            let g_val = g_val.to_be_bytes();
+            //let g_val = ((green - g_min) * 255_u32) / (g_max - g_min);
+            let g_val = green.to_be_bytes();
             let g_val = g_val[3];
 
             let blue = blue_pixels[y][x];
-            let b_val = ((blue - b_min) * 255_u32) / (b_max - b_min);
-            let b_val = b_val.to_be_bytes();
+            //let b_val = ((blue - b_min) * 255_u32) / (b_max - b_min);
+            let b_val = blue.to_be_bytes();
             let b_val = b_val[3];
 
             image_buffer.put_pixel(x as u32,    
@@ -287,7 +280,7 @@ fn vec2image(red_pixels: &Vec<Vec<u32>>, green_pixels: &Vec<Vec<u32>>, blue_pixe
     dynamic_image
 }
 
-pub fn scale_u32_to_u8(x: &u32, min: &u32, max: &u32) -> u8 {
+/*pub fn scale_u32_to_u8(x: &u32, min: &u32, max: &u32) -> u8 {
     let val = ((x-min) * 255_u32) / (max-min)  ;
     let x_scaled_u8 = val.to_be_bytes();
     let ans = x_scaled_u8[3];
@@ -299,12 +292,12 @@ pub fn scale_u32_to_u16(x: &u32, min: &u32, max: &u32) -> u16 {
     let x_scaled_u8 = val.to_be_bytes();
     let ans = (x_scaled_u8[2] as u16) << 8 | x_scaled_u8[3] as u16;
     return ans
-}
+}*/
 
 fn vec_to_luma16(pixels: &Vec<Vec<u32>>) -> DynamicImage {
     let height = pixels.len();
     let width = pixels[0].len();
-    println!("{width} x {height}");
+    //println!("{width} x {height}");
 
     let mut image_buffer: ImageBuffer<Luma<u16>, Vec<u16>> =
         ImageBuffer::new(width as u32, height as u32);
@@ -315,7 +308,7 @@ fn vec_to_luma16(pixels: &Vec<Vec<u32>>) -> DynamicImage {
     image_buffer.enumerate_pixels_mut().for_each(|(x, y, pxl)| {
         let val = pixels[y as usize][x as usize];
         //let val = scale_u32_to_u16(&val, &min, &max);
-        let val = ((val-min) * 65535_u32) / (max-min)  ;
+        let val = ((val-min) * 65535_u32) / (max-min);
         let val = val.to_be_bytes();
         let ans = (val[2] as u16) << 8 | val[3] as u16;
 
@@ -329,13 +322,10 @@ fn vec_to_luma16(pixels: &Vec<Vec<u32>>) -> DynamicImage {
 fn vec_to_luma8(pixels: &Vec<Vec<u32>>) -> DynamicImage {
     let height = pixels.len();
     let width = pixels[0].len();
-    println!("{width} x {height}");
+    //println!("{width} x {height}");
 
     let mut image_buffer: ImageBuffer<Luma<u8>, Vec<u8>> =
         ImageBuffer::new(width as u32, height as u32);
-
-    let min = pixels.iter().flatten().min().unwrap();
-    let max = pixels.iter().flatten().max().unwrap();
 
     image_buffer.enumerate_pixels_mut().for_each(|(x, y, pxl)| {
         let val = pixels[y as usize][x as usize];
@@ -352,9 +342,9 @@ fn vec_to_luma8(pixels: &Vec<Vec<u32>>) -> DynamicImage {
 
 // Average out f32 channel depthmaps to get the final depth map estimation
 // Convert depthmap to u32 and store in Luma<u32> 
-pub fn average_ch_depth(red_depths: Vec<Vec<u32>>, 
-                        green_depths: Vec<Vec<u32>>, 
-                        blue_depths: Vec<Vec<u32>>) 
+pub fn average_ch_depth(red_depths: &Vec<Vec<u32>>, 
+                        green_depths: &Vec<Vec<u32>>, 
+                        blue_depths: &Vec<Vec<u32>>) 
                         -> Vec<Vec<u32>>
                         {
     let r_height = red_depths.len();
@@ -374,9 +364,6 @@ pub fn average_ch_depth(red_depths: Vec<Vec<u32>>,
 
     let width  = b_width;
     let height = b_height;
-
-    let mut image_buffer: ImageBuffer<Luma<u8>, Vec<u8>> =
-        ImageBuffer::new(width as u32, height as u32);
 
     let avgs = (0..height).map(|y|{
         (0..width).map(|x|{
@@ -416,9 +403,6 @@ pub fn average_ch_disparities(red_disp: &Vec<Vec<u32>>,
     let width  = b_width;
     let height = b_height;
 
-    //let mut image_buffer: ImageBuffer<Luma<u8>, Vec<u8>> =
-    //ImageBuffer::new(width as u32, height as u32);
-
     let avgs = (0..height).map(|y|{
         (0..width).map(|x|{
             let avg: u32 = (red_disp[y][x] + green_disp[y][x] + blue_disp[y][x]) / 3_u32;
@@ -427,90 +411,138 @@ pub fn average_ch_disparities(red_disp: &Vec<Vec<u32>>,
     }).collect::<Vec<Vec<u32>>>();
 
     avgs
-
 }
  
-pub fn get_depthmap(left_img_path: &PathBuf, right_img_path: &PathBuf, dmin_path: &PathBuf) {
+pub fn get_depthmap(left_img_path: &PathBuf, 
+                    right_img_path: &PathBuf, 
+                    dmin_path: &PathBuf,
+                    disp1_path: &PathBuf,
+                    output_fn_or_gen_dm_path: &PathBuf,
+                    fullsize_width: &u32
+                ) {
     let left_img = image::open(left_img_path).expect("Path does not exist, make sure to include extension");
     let right_img = image::open(right_img_path).expect("Path does not exist, make sure to include extension");
 
     // Split image into rgb channels
     let left_rgb_channels = get_channels(&left_img);
     let right_rgb_channels = get_channels(&right_img);
+
     
+
     // find disparity between L and R images for each channels (RGB)
-    // sub steps
-    // choose comparison block size
-    let block_size = 3_u32; // this is the size of the block that we will be using to compare pixels 
+    let (width, _) = left_img.dimensions();
+    let scaling_factor =   *fullsize_width as f32 / width as f32;
 
+    println!("Finding disparities in RGB channels...");
     let time_to_find_disparites = Instant::now();
-    //let red_disparities = compute_disparity_map(&left_rgb_channels[0], &right_rgb_channels[0], &5_u32); 
-    //let green_disparities = compute_disparity_map(&left_rgb_channels[1], &right_rgb_channels[1], &9_u32);
-    //let blue_disparities = compute_disparity_map(&left_rgb_channels[2], &right_rgb_channels[2], &11_u32);
-    let red_disparities = compute_disparity_map(&left_rgb_channels[0], &right_rgb_channels[0], &7_u32); 
-    let green_disparities = compute_disparity_map(&left_rgb_channels[1], &right_rgb_channels[1], &9_u32);
-    let blue_disparities = compute_disparity_map(&left_rgb_channels[2], &right_rgb_channels[2], &9_u32);
-    vec2image(&red_disparities, &green_disparities, &blue_disparities).save("RGB_Disparites.png").unwrap();
 
+    let red_disparities = compute_disparity_map(&left_rgb_channels[0], 
+                                                &right_rgb_channels[0], 
+                                                &7_u32, 
+                                                &scaling_factor); // 5
+    let green_disparities = compute_disparity_map(&left_rgb_channels[1], 
+                                                  &right_rgb_channels[1], 
+                                                  &9_u32, 
+                                                  &scaling_factor); // 9
+    let blue_disparities = compute_disparity_map(&left_rgb_channels[2], 
+                                                 &right_rgb_channels[2], 
+                                                 &9_u32, 
+                                                 &scaling_factor); // 9
+    
     let avg_ch_disp = average_ch_disparities(&red_disparities, &green_disparities, &blue_disparities);
-    println!("Completed in: {:?}", time_to_find_disparites.elapsed());
+    
+    println!("Found in: {:?}\n", time_to_find_disparites.elapsed());
 
     let focal_length = 3740_u32; // in pixels
     let baseline     = 160_u32;  // in mm
-    let dmin         = get_dmin(dmin_path).unwrap();
+    let dmin         = read_from_files::get_dmin(dmin_path).unwrap();
 
+    println!("Finding depths in RGB disparity channels...");
     let time_to_find_depths = Instant::now();
-    let red_depth = calc_depthmap(red_disparities, &focal_length, &baseline, &dmin);
-    let green_depth = calc_depthmap(green_disparities, &focal_length, &baseline, &dmin);
-    let blue_depth = calc_depthmap(blue_disparities, &focal_length, &baseline, &dmin);
+    let red_depth   = calc_depthmap(&red_disparities, 
+                                    &focal_length, 
+                                    &baseline, 
+                                    &dmin, 
+                                    &scaling_factor);
+    let green_depth = calc_depthmap(&green_disparities, &focal_length, &baseline, &dmin, &scaling_factor);
+    let blue_depth  = calc_depthmap(&blue_disparities, &focal_length, &baseline, &dmin, &scaling_factor);
 
-    vec2image(&red_depth, &green_depth, &blue_depth).save("RGB_Depths.png").unwrap();
+    let avgerage_depths = average_ch_depth(&red_depth, &green_depth, &blue_depth);
+    println!("Found in: {:?}\n", time_to_find_depths.elapsed());
 
-    let avgerage_depths = average_ch_depth(red_depth, green_depth, blue_depth);
-    println!("Depthmap Computed in: {:?}", time_to_find_depths.elapsed());
-
-    //red_disparities.iter().for_each(|row| {
-    //    println!("{:?} ", row);//.iter().max().unwrap());
-    //    //println!("min: {:?}\n", row.iter().min().unwrap());
-    //});
+    let rgb_disparity_map_8bit = vec_to_rgb8_img(&red_disparities, 
+                                                 &green_disparities, 
+                                                 &blue_disparities); 
     
+    println!("Evaluating RGB disparity channels against ground truth...");
+    let time_to_find_depths = Instant::now();
+    let eval_score = eval(&rgb_disparity_map_8bit, disp1_path);
+    
+    println!("\n% Bad Match Pixels (4 pixel threshold): \nRed Ch.: {:?}% Green Ch.: {:?}% Blue Ch.: {:?}%
+        ", eval_score[0]*100_f32, eval_score[1]*100_f32, eval_score[2]*100_f32);
+    
+    println!("Evaluated in: {:?}\n", time_to_find_depths.elapsed());
+    
+    println!("Saving Images...");
     let saving_image = Instant::now();
-    //vec_to_luma8(&red_disparities).save("red_disparities2.png").expect("WTF!");
-    //vec_to_luma8(&green_disparities).save("green_disparities2.png").expect("WTF!");
-    //vec_to_luma8(&blue_disparities).save("blue_disparities2.png").expect("WTF!");
-    vec_to_luma8(&avg_ch_disp).save("disparities.png").expect("WTF!");
-    vec_to_luma8(&avgerage_depths).save("depthmap2.png").expect("WTF!");
-    vec_to_luma16(&avgerage_depths).save("depthmap2B16bit.png").expect("WTF!");
 
-    println!("[saving_image] Completed in: {:?}", saving_image.elapsed());
+    
+
+    vec_to_rgb8_img(&red_disparities, 
+                    &green_disparities, 
+                    &blue_disparities).save("RGB_Disparity_Map_8bit.png")
+                                      .expect("Could not save RGB_Disparity_Map_8bit!");
+
+    vec_to_rgb8_img(&red_depth, 
+                    &green_depth, 
+                    &blue_depth).save("RGB_Depth_Map_8bit.png")
+                                .expect("Could not save RGB_Depth_Map_8bit!");
+
+    vec_to_luma8(&avg_ch_disp).save("Avg_RGB_Disparity_Map_8bit.png")
+                              .expect("Could not save Avg_RGB_Disparity_Map_8bit!");
+    
+    vec_to_luma8(&avgerage_depths).save("Avg_RGB_Depth_Map_8bit.png")
+                                  .expect("Could not save Avg_RGB_Depth_Map_8bit!");
+    
+    vec_to_luma16(&avgerage_depths).save("Avg_RGB_Depth_Map_16bit.png")
+                                   .expect("Could not save Avg_RGB_Depth_Map_16bit!");
+
+    println!("Images saved in: {:?}", saving_image.elapsed());
+
+    //println!("{:?}", scaling_factor);
 
 }
 
-pub fn eval(gen_disp_map: &PathBuf, grnd_truth_disp_map: &PathBuf) -> Vec<f32> {
-    let gen_disp_map = image::open(gen_disp_map).expect("Path does not exist, make sure to include extension");
+pub fn eval(gen_disp_map: &DynamicImage, grnd_truth_disp_map: &PathBuf) -> Vec<f32> {
+    //let gen_disp_map = image::open(gen_disp_map).expect("Path does not exist, make sure to include extension");
     let grnd_truth_disp_map = image::open(grnd_truth_disp_map).expect("Path does not exist, make sure to include extension");
 
     // Split image into rgb channels
-    let gen_disp_rgb = get_channels(&gen_disp_map);
+    let gen_disp_rgb = get_channels(gen_disp_map);
     let grnd_truth_disp_rgb = get_channels(&grnd_truth_disp_map);
 
     let channel_evaluations = gen_disp_rgb.iter()
                             .zip(grnd_truth_disp_rgb.iter())
                             .map(|(gen_ch, gt_ch)|{
+                                assert_eq!(gen_ch.dimensions(), gt_ch.dimensions());
                                 
-                                let r_max = &gt_ch.iter().filter(|&&gt_pxl| gt_pxl != 0_u8).count();
-                                let dist: f32 = gen_ch.iter().zip(gt_ch.iter()).map(|(&gen_pxl, &gt_pxl)|{
-                                    if gt_pxl != 0_u8 {
-                                        let percent_diff = (gen_pxl).abs_diff(gt_pxl) / gt_pxl;
-                                        percent_diff as f32
+                                let (width, height) = gen_ch.dimensions();
+                                let no_pixels = (width * height) as usize;
+                                
+                                let bad_count: usize = gen_ch.iter().zip(gt_ch.iter()).map(|(&gen_pxl, &gt_pxl)|{
+                                    
+                                    let abs_diff = (gen_pxl).abs_diff(gt_pxl);
+                                    if abs_diff > 4 {
+                                        1_usize
                                     } else {
-                                        0_f32
+                                        0_usize
                                     }
+                                    
                                 }).sum();
+                                //println!("bad_count: {:?}", bad_count);
+                                let bad_score = bad_count as f32 / no_pixels as f32;
                             
-                                let r_eval = dist / *r_max as f32;
-                            
-                                r_eval
+                                bad_score
                             }).collect::<Vec<f32>>();
         
     channel_evaluations
