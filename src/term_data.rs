@@ -3,50 +3,70 @@ use std::fmt::Error;
 use std::path::PathBuf;
 
 // reads in parameters passed to programme
-pub fn read_term_args() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
+/*pub fn read_term_args() -> Result<(String, [PathBuf;2], Option<String>), Box<dyn std::error::Error>> {
     
     // get environment arguments
     let args: Vec<String> = env::args().collect();
-    
-    
-    
+    println!("args: {:?}", args);
     match args.len() {
-        2 => {
+        // check for -> "eval <generated_depthmap_dir> <ground_truth_depthmap_path>" 
+        4 => {
             let command = std::env::args().nth(1).unwrap();
+            println!("I get to eval");
             if command == "eval" {
-                let generated_dm_dir =  std::env::args().nth(2).unwrap();
-                let ground_truth_dm_dir =  std::env::args().nth(2).unwrap();
+                let generated_depthmap_path =  env::args().nth(2).unwrap();
+                let ground_truth_depthmap_path =  env::args().nth(3).unwrap();
+
+                let generated_depthmap_path = PathBuf::from(&generated_depthmap_path);
+                let ground_truth_depthmap_path = PathBuf::from(&ground_truth_depthmap_path);
+
+                return Ok((command, [generated_depthmap_path, ground_truth_depthmap_path], None));
             } else {
-                // wrong no. of args
+                return Err(Box::new(Error));
             }
         }
+        // check for -> "depthmap <left_img_path> <right_img_path> <output_fn>"
+        5 => {
+            let command = std::env::args().nth(1).unwrap();
+            //println!("I get to depthmap");
+            if command == "depthmap" {
+                let left_img_path =  env::args().nth(2).unwrap();
+                let right_img_path =  env::args().nth(3).unwrap();
+                let output_fn =  env::args().nth(4).unwrap();
+
+                let left_img_path = PathBuf::from(&left_img_path);
+                let right_img_path = PathBuf::from(&right_img_path);
+                
+
+                return Ok((command, [left_img_path, right_img_path], Some(output_fn)));
+            } else {
+                return Err(Box::new(Error));
+            }
+        }
+        _ => return Err(Box::new(Error)),
     }
+}*/
 
+pub fn read_term_args() -> Result<(String, PathBuf, PathBuf), Box<dyn std::error::Error>> {
+    
+    // get environment arguments
+    let args: Vec<String> = env::args().collect();
+    println!("args: {:?}", args);
+    match args.len() {
+        4 => {
+            let command = std::env::args().nth(1).unwrap();
+            if command != "eval" || command != "depthmap"  {
 
-    // check that the correct number of arguments have been passed
-    if args.len() != 5 {
-        println!("Invalid input: input must be: cargo run -- [left_image path] [right_image path] [ground_truth_image path] [depthmap filename]");
-        return Err(Box::new(Error));
-    } else {
-        
-        // get input directory string and convert to PathBuf
-        let left_img_dir =          std::env::args().nth(1).expect("No input directory provided");
-        let right_img_dir =         std::env::args().nth(2).expect("No input directory provided");
-        let ground_truth_img_dir =  std::env::args().nth(3).expect("No input directory provided");
-        let depthmap_dir =          std::env::args().nth(4).expect("No input directory provided");
+                let data_dir =  env::args().nth(2).unwrap();
+                let generated_depthmap_path =  env::args().nth(3).unwrap();
 
-
-        let left_img_dir = PathBuf::from(&input_dir);
-        let right_img_dir = PathBuf::from(&input_dir);
-        let ground_truth_img_dir = PathBuf::from(&input_dir);
-        let left_img_dir = PathBuf::from(&input_dir);
-        
-        // get output filename add extention and convert to PathBuf
-        let output_filename = std::env::args().nth(2).expect("No output filename provided");
-        let mut output_filename = PathBuf::from(output_filename);
-        output_filename.set_extension("dat");
-
-        // return input directory and output filename
-        Ok((input_dir, output_filename))
-    } 
+                let data_dir_path = PathBuf::from(&data_dir);
+                let generated_depthmap_path = PathBuf::from(&generated_depthmap_path);
+                return Ok((command, data_dir_path, generated_depthmap_path));
+            } else {
+                return Err(Box::new(Error));
+            }
+        }
+        _ => return Err(Box::new(Error)),
+    }
 }

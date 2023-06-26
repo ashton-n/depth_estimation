@@ -1,87 +1,160 @@
 use std::ffi::OsStr;
-use std::io;
-use std::fs::{read_dir};
+use std::io::{self, BufReader, BufRead, Error, ErrorKind};
+use std::fs::{read_dir, File};
 use std::path::{Path, PathBuf};
 
-// filters out irrelevant files and groups the green and red files together according
-// to the sample name
-pub fn get_file_pathes(input_dir: &Path) -> io::Result<Vec<(PathBuf, PathBuf)>> {    
-    // read in all files in the input directory
-    let entries = read_dir(input_dir).expect("read_dir call failed");
+// for Middlebury 2014
+pub fn get_data_paths(data_dir: &PathBuf) -> io::Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf)> {
+    let mut left_img_path = data_dir.clone();
+    left_img_path.push("view1.png");
 
-    // unwrap paths from entries into a vector of PathBufs
-    let paths = entries.map(|x| x.unwrap().path()).collect::<Vec<PathBuf>>();
+    let mut right_img_path = data_dir.clone();
+    right_img_path.push("view5.png");
 
-    // filter out all files that are not relevant
-    let mut data_paths = paths.into_iter()
-                              .filter(|path| path.extension() == Some(OsStr::new("dat")))
-                              .filter(|path| path.extension() != None)
-                              .filter(|path| path
-                                .file_stem()
-                                .and_then(|stem| stem.to_str())
-                                .and_then(|str| str.chars().last())
-                                .map(|last_char| last_char == 'n' || last_char == 'd').unwrap())
-                              .collect::<Vec<PathBuf>>();
+    let mut dmin_path = data_dir.clone();
+    dmin_path.push("dmin.txt");
 
-    // sort the paths so that the green and red files are next to each other
-    data_paths.sort();
+    let mut disp1_path = data_dir.clone();
+    disp1_path.push("disp1.png");
 
-    // split the paths into two vectors, one for green and one for red
-    let (green, red): (Vec<PathBuf>, Vec<PathBuf>) = data_paths.into_iter()
-                                                   .partition(|path| path
-                                                        .file_stem()
-                                                        .and_then(|stem| stem.to_str())
-                                                        .and_then(|str| str.chars().last())
-                                                        .map(|last_char| last_char == 'n')
-                                                        .unwrap_or(false)
-                                                    );                                                
+    let mut disp5_path = data_dir.clone();
+    disp5_path.push("disp5.png");
 
-    // zip the two vectors together to get a vector of tuples
-    let sample_pair_paths = green.into_iter()
-                                 .zip(red.into_iter())
-                                 .collect::<Vec<(_, _)>>();
+    Ok((left_img_path, right_img_path, dmin_path, disp1_path, disp5_path))
+} 
 
-    // return the vector of tuples
-    Ok(sample_pair_paths)
+pub fn get_dmin(dmin_path: &PathBuf) -> std::io::Result<u32> {
+    let file = File::open(dmin_path)?;
+    let reader = BufReader::new(file);
+
+    let no_lines = &reader.lines().count();
+    match no_lines {
+        1 => {
+                let file = File::open(dmin_path)?;
+                let reader = BufReader::new(file);
+                let dmin = reader.lines().next().unwrap().unwrap().parse::<u32>().unwrap(); 
+                return Ok(dmin)
+             },
+        _ => return Err(Error::new(ErrorKind::Other, "Unexpected number of lines")),
+    }
+    
 }
 
-// split the pathes of the files to be read, into chunks
-// so that each process can read in its own chunk of data.
-pub fn portion_input_data (mut sample_pair_paths: Vec<(PathBuf, PathBuf)>, num_procs: usize) 
-   -> (Vec<Vec<(PathBuf, PathBuf)>>, Option<(PathBuf, PathBuf)>){
-  
-     // check if the number of files is divisible by the number of processes
-     if sample_pair_paths.len() % num_procs != 0 {
-        
-        // if not store the remainder data in a separate variable
-        // and remove it from the vector of file paths
-        let remainder = sample_pair_paths.remove(sample_pair_paths.len()-1);
-        
-        // find the right chunk size for the number of processes
-        let chunk_size = sample_pair_paths.len() / num_procs;
-        
-        // split the vector of file paths into chunks of size chunk_size
-        let chunks = sample_pair_paths.chunks(chunk_size)
-                                      .map(|chunk| chunk.to_vec())
-                                      .collect::<Vec<_>>();
-        // return the chunks and the remainder
-        (chunks, Some(remainder))
-     } else {
-          // find the right chunk size for the number of processes
-          let chunk_size = sample_pair_paths.len() / num_procs;
+// for Middlebury 2014
 
-          // split the vector of file paths into chunks of size chunk_size
-          let chunks = sample_pair_paths.chunks(chunk_size)
-                                        .map(|chunk| chunk.to_vec())        
-                                        .collect::<Vec<_>>();
-          // return the chunks and no remainder
-          (chunks, None)
-      }
+
+// for Middlebury 2014
+pub fn get_calib_info(calibration_info_path: &PathBuf) -> std::io::Result<()> {
+    
+    let file = File::open(calibration_info_path).expect("file not found!");
+    let buf_reader = BufReader::new(file);
+    
+    buf_reader.lines().enumerate().for_each(|(line_no, line)|{
+        let line = line.unwrap();
+        println!("line_no: {:?} {:?}", line_no, &line[0..5]);
+    
+        if line_no == 0 {
+            let cam0 = &line[line.find("=").unwrap()..line.len() - 1];
+                                              //.expect("Cannot Parse Calib.txt: No vector collection found");
+        } else if line_no == 1 {
+            let cam1 = &line[line.find("=").unwrap()..line.len() - 1];
+        } else {
+            println!("End of Conditional");
+        }
+
+        //println!("{:?}", cam0);
+            
+    });
+    Ok(())
+       
 }
 
-#[test]
-fn test_get_file_pathes() {
-    let input_dir = PathBuf::from("unit_test_data");
-    let file_pathes = get_file_pathes(&input_dir).unwrap();
-    assert_eq!(file_pathes.len(), 4);
+
+/*
+// for Middlebury 2014
+pub fn get_data_paths(data_dir: &PathBuf) -> io::Result<(PathBuf, PathBuf, PathBuf)> {
+    let mut left_img_path = data_dir.clone();
+    left_img_path.push("im0.png");
+
+    let mut right_img_path = data_dir.clone();
+    right_img_path.push("im0.png");
+
+    let mut calibration_info_path = data_dir.clone();
+    calibration_info_path.push("calib.txt");
+
+    Ok((left_img_path, right_img_path, calibration_info_path))
+} 
+
+
+// for Middlebury 2014
+pub fn load_variables_from_file(calibration_info_path: &PathBuf) 
+    -> std::io::Result<(f32, f32, f32, usize, usize, usize, usize)> 
+    {
+    let file = File::open(calibration_info_path)?;
+    let reader = BufReader::new(file);
+
+    let mut variables = Vec::new();
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            let parts: Vec<&str> = line.split('=').map(|s| s.trim()).collect();
+            if parts.len() == 2 {
+                let variable_name = parts[0].to_string();
+                let variable_value = parts[1].trim_matches(|c| c == '[' || c == ']').to_string();
+                variables.push((variable_name, variable_value));
+            }
+        }
+    }
+
+    //let cam0 = &variables[0].1;
+    //println!("cam0: {:?}", cam0);
+    
+
+    let cam0 = &variables[0].1.split_whitespace().collect::<Vec<&str>>();
+    //println!("cam0: {:?}", &cam0);
+    let focal_length = &cam0[0].parse::<f32>().expect("Problem reading focal legnth");
+    //println!("focal_legnth: {:?}", &focal_legnth);
+
+    //let cam1 = &variables[1].1;
+    //println!("cam1: {:?}", cam1);
+    let doffs = &variables[2].1.parse::<f32>().expect("Problem reading focal legnth");
+    //println!("doffs: {:?}", doffs);
+    let baseline = &variables[3].1.parse::<f32>().expect("Problem reading focal legnth");
+    //println!("baseline: {:?}", baseline);
+    let width = &variables[4].1.parse::<usize>().expect("Problem reading focal legnth");
+    //println!("width: {:?}", width);
+    let height = &variables[5].1.parse::<usize>().expect("Problem reading focal legnth");
+    //println!("height: {:?}", height);
+    let ndisp = &variables[6].1.parse::<usize>().expect("Problem reading focal legnth");
+    //println!("ndisp: {:?}", ndisp);
+    let isint = &variables[7].1.parse::<usize>().expect("Problem reading focal legnth");
+    //println!("isint: {:?}", isint);
+    Ok((*focal_length, *doffs, *baseline, *width, *height, *ndisp, *isint))
+    
 }
+
+// for Middlebury 2014
+pub fn get_calib_info(calibration_info_path: &PathBuf) -> std::io::Result<()> {
+    
+    let file = File::open(calibration_info_path).expect("file not found!");
+    let buf_reader = BufReader::new(file);
+    
+    buf_reader.lines().enumerate().for_each(|(line_no, line)|{
+        let line = line.unwrap();
+        println!("line_no: {:?} {:?}", line_no, &line[0..5]);
+    
+        if line_no == 0 {
+            let cam0 = &line[line.find("=").unwrap()..line.len() - 1];
+                                              //.expect("Cannot Parse Calib.txt: No vector collection found");
+        } else if line_no == 1 {
+            let cam1 = &line[line.find("=").unwrap()..line.len() - 1];
+        } else {
+            println!("End of Conditional");
+        }
+
+        //println!("{:?}", cam0);
+            
+    });
+    Ok(())
+       
+}*/
