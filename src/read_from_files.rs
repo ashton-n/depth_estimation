@@ -2,7 +2,6 @@ use std::io::{BufReader, BufRead, Error, ErrorKind, Result};
 use std::fs::File;
 use std::path::PathBuf;
 
-// for Middlebury 2014
 pub fn get_data_paths(data_dir: &PathBuf) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf)> {
     let mut left_img_path = data_dir.clone();
     left_img_path.push("view1.png");
@@ -42,31 +41,6 @@ pub fn get_dmin(dmin_path: &PathBuf) -> std::io::Result<u32> {
     
 }
 
-/*pub fn get_original_dims(data_dir: &PathBuf) -> std::io::Result<(u32, u32)> {
-    let filename = data_dir.clone();
-    let filename = filename.file_name().expect("Could not get file name for full size version");
-    
-    let mut new_filename = filename.to_os_string();
-    new_filename.push(OsString::from("-2views")); 
-    
-    println!("filename is: {:?}", &new_filename);
-    
-    let mut full_size_path = data_dir.clone();
-    full_size_path.pop();
-    full_size_path.pop();
-    full_size_path.pop();
-
-    full_size_path.push("FullSize");
-    full_size_path.push(new_filename);
-    full_size_path.push(filename);
-
-    println!("full_size_path is: {:?}", &full_size_path);
-
-    let Ok((width, height)) = image_dimensions(full_size_path);
-
-    Ok((width, height))
-}*/
-
 pub fn get_original_dims(data_dir: &PathBuf) -> (u32, u32) {
     let filename = data_dir.file_name().expect("Could not get file name for full-size version");
 
@@ -81,8 +55,6 @@ pub fn get_original_dims(data_dir: &PathBuf) -> (u32, u32) {
         .join(&new_filename)
         .join(filename)
         .join("view1.png");
-
-    println!("filename is: {:?}", &full_size_path);
 
     let (width, height) = image::image_dimensions(full_size_path).unwrap();
 

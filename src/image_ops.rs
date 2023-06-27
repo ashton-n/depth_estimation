@@ -1,10 +1,11 @@
 extern crate image;
 
-use std::{path::PathBuf, time::Instant};
+use std::{path::PathBuf, time::Instant, fs};
 use image::{ ImageBuffer, Pixel, DynamicImage, Rgb, GenericImage, Luma, GenericImageView};
 use rayon::prelude::*;
 
 use crate::read_from_files;
+
 
 
 //use imageproc::contrast::{equalize_histogram, stretch_contrast};
@@ -20,54 +21,6 @@ pub fn pad_img(img: &ImageBuffer<Luma<u8>, Vec<u8>>, border_depth: &u32) -> Imag
     image_buf.copy_from(img, *border_depth, *border_depth).expect("Could not copy");
     image_buf
 }
-
-/*pub fn get_pxl_block_idxs(img: &ImageBuffer<Luma<u8>, Vec<u8>>, kernal_size: &u32) -> Vec<Vec<Vec<Vec<u32>>>> {
-    //img should be unpadded
-    let pxl_block_idxs = img.enumerate_pixels().map(|(x, y, _ )| {
-        let x_vec = (x..(x + kernal_size)).collect::<Vec<u32>>();
-        let y_vec = (y..(y + kernal_size)).collect::<Vec<u32>>();
-        vec![x_vec, y_vec]
-    }).collect::<Vec<Vec<Vec<u32>>>>();
-
-    pxl_block_idxs.chunks(img.width() as usize)
-                  .map(|x| x.to_vec())
-                  .collect::<Vec<Vec<Vec<Vec<u32>>>>>()
-}*/
-
-/*pub fn get_pxl_blocks_vec(img: &ImageBuffer<Luma<u8>, Vec<u8>>, kernal_size: &u32) -> Vec<Vec<Vec<u8>>> {
-    // this fetches a vector of sub image blocks, where each block is kernel_size x kernel_size in size
-    // NOTE! img gets padded with zeros
-
-    let border_depth = kernal_size/2;
-    
-    let padded_img = pad_img(img, &border_depth);
-
-    let pxl_idxs = get_pxl_block_idxs(img, kernal_size);
-    
-    let vec_blocks = img.enumerate_pixels().map(|(cols, rows, _ )| {
-
-        // fetch pixel indices for the block around the current pixel 
-        let yx_idx_vecs = &pxl_idxs[rows as usize][cols as usize];
-        
-        //let block = vec_yx_idxs[0].iter().zip(vec_yx_idxs[1].iter()).map(|(y, x)| {
-        let block = yx_idx_vecs[0].par_iter().map(|&y| {
-            let block_row = yx_idx_vecs[1].par_iter().map(|&x| {
-                let val = padded_img.get_pixel_checked(y, x)
-                                    .unwrap_or_else(|| {
-                                        println!("Could not get pixel: invalid index x: {:?} y: {:?}", x, y);
-                                        panic!();
-                                    });
-                let x = val[0];
-                x
-            }).collect::<Vec<u8>>();
-            block_row
-        }).collect::<Vec<Vec<u8>>>();
-
-        block
-
-    }).collect::<Vec<Vec<Vec<u8>>>>();
-    vec_blocks
-}*/
 
 pub fn validate_block_size(block_size: &u32) -> bool {
     //println!("{:?}", kernal_size);
@@ -102,31 +55,6 @@ pub fn get_channels(img: &DynamicImage) ->
 
 }
 
-/*pub fn get_similarity_value(left_block: &Vec<u8>, right_block: &Vec<u8>) -> i32 {
-    // this function returns the similarity value between two blocks
-    // the similarity value is the sum of the absolute difference between each pixel in the block
-    // the similarity value is a u8, so it is between 0 and 255
-    assert_eq!(left_block.len(), right_block.len(), "left and right blocks must be the same size");
-    let similarity_value = left_block.into_par_iter()
-                                     .zip(right_block.into_par_iter())
-                                     .map(|(left_pxl, right_pxl)| {
-                                            (*left_pxl as i32 - *right_pxl as i32).abs()
-                                        })
-                                     .sum::<i32>();
-    similarity_value
-}*/
-
-/*pub fn print_img_buf_luma_u8(img: &ImageBuffer<Luma<u8>, Vec<u8>>) {
-    println!("");
-    img.rows().for_each(|row|{
-        row.into_iter().for_each(|pxl| {
-            print!("{:?} ", pxl[0]);
-        });
-        println!("");
-    });
-    println!("");
-}*/
-
 pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>, 
     right_img: &ImageBuffer<Luma<u8>, Vec<u8>>, 
     block_size: &u32,
@@ -143,20 +71,80 @@ pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>,
     let left_padded = pad_img(left_img, &border_depth);
     let right_padded = pad_img(right_img, &border_depth);
 
-    //print_img_buf_luma_u8(&left_padded);
-    //print_img_buf_luma_u8(&right_padded);
+
+    // x and y reference the reference image pixel
+    let disparity_map = (0..height).into_par_iter().map(|ref_y| {
+        //let find_row_disp_per_pxl = Instant::now();
+        let disparity_row = (0..width).map(|ref_x|{
+            // x and y are the ref_block coordinates
+            
+            let lowest_sad_block_idx = (0..width).into_par_iter().map(|cmp_block_x|{ 
+                
+                let left_block_vals = (ref_y..ref_y + block_size).flat_map(|padded_y|{
+                    let left_val_row = (ref_x..ref_x + block_size).map(|padded_x|{
+                        
+                        let left_val = left_padded.get_pixel(padded_x, padded_y)[0];
+                        left_val
+
+                    }).collect::<Vec<u8>>();
+                    left_val_row
+                }).collect::<Vec<u8>>();
+
+                let right_block_vals = (ref_y..ref_y + block_size).flat_map(|padded_y|{
+                    let right_val_row = (cmp_block_x..cmp_block_x + block_size).map(|padded_x|{
+                        
+                        let right_val = right_padded.get_pixel(padded_x, padded_y)[0];
+                        right_val    
+
+                    }).collect::<Vec<u8>>();
+                    right_val_row
+                }).collect::<Vec<u8>>();
+                
+                let sad_block_score: usize = left_block_vals.iter()
+                                                     .zip(right_block_vals.iter())
+                                                     .map(|(&y, &x)| {
+                                                        y.abs_diff(x) as usize
+                                                     }).sum();  
+
+                (cmp_block_x, sad_block_score)
+            }).min_by_key(|(_cmp_block_x, sad_score_block)| sad_score_block.clone()).unwrap().0;
+            
+            let disparity = ref_x.abs_diff(lowest_sad_block_idx); 
+            (disparity as f32 * scaling_factor).round() as u32
+
+        }).collect::<Vec<u32>>();
+        disparity_row
+
+    }).collect::<Vec<Vec<u32>>>();
+    disparity_map
+
+}
+
+/*pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>, 
+    right_img: &ImageBuffer<Luma<u8>, Vec<u8>>, 
+    block_size: &u32,
+    scaling_factor: &f32
+) 
+    -> Vec<Vec<u32>> {
+
+    assert!(validate_block_size(block_size), "in Correspondence Matching");
+    assert_eq!(left_img.dimensions(), right_img.dimensions(), "Correspondence Matching: Left and Right images must be the same dimensions");
+
+    let (width, height) = left_img.dimensions();
+
+    let border_depth = block_size/2;
+    let left_padded = pad_img(left_img, &border_depth);
+    let right_padded = pad_img(right_img, &border_depth);
 
     // x and y reference the reference image pixel
     let disparity_map = (0..height).map(|ref_y| {
-        //let find_row_disp_per_pxl = Instant::now();
+
         let disparity_row = (0..width).into_par_iter().map(|ref_x|{
-            // x and y are the ref_block coordinates
-            //println!("ref_y: {:?} ref_x: {:?}", ref_y, ref_x);
-            //let find_row_disp_per_pxl = Instant::now();
             
             let lowest_sad_block_idx = (0..width).into_par_iter().map(|cmp_block_x|{ 
                 //println!("{:?}", cmp_block_x);
-                
+
+
                 let left_block_vals = (ref_y..ref_y + block_size).flat_map(|padded_y|{
                     let left_val_row = (ref_x..ref_x + block_size).map(|padded_x|{
                         
@@ -182,9 +170,6 @@ pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>,
                                                      .map(|(&y, &x)| {
                                                         y.abs_diff(x) as usize
                                                      }).sum();  
-                //println!("left_block_vals: {:?}", left_block_vals);
-                //println!("right_block_vals: {:?}", right_block_vals);
-                //println!("BLOCK_SAD_SCORE: {:?}", sad_block_score);
 
                 (cmp_block_x, sad_block_score)
             }).min_by_key(|(_cmp_block_x, sad_score_block)| sad_score_block.clone()).unwrap().0;
@@ -192,14 +177,14 @@ pub fn compute_disparity_map(left_img: &ImageBuffer<Luma<u8>, Vec<u8>>,
             let disparity = ref_x.abs_diff(lowest_sad_block_idx); 
             (disparity as f32 * scaling_factor).round() as u32
 
-        }).collect::<Vec<u32>>();//pixel disparity (keep u32 -?> dependant on image width size)
-        //println!("[find_row_disp_per_pxl] Completed in: {:?}", find_row_disp_per_pxl.elapsed());
+        }).collect::<Vec<u32>>();
         disparity_row
 
     }).collect::<Vec<Vec<u32>>>();
     disparity_map
 
-}
+}*/
+
 
 pub fn calc_depthmap(disparity_map: &Vec<Vec<u32>>, 
                      focal_length: &u32, 
@@ -412,12 +397,30 @@ pub fn average_ch_disparities(red_disp: &Vec<Vec<u32>>,
 
     avgs
 }
- 
+
+fn create_folder_with_increment(path: &PathBuf) -> std::io::Result<PathBuf> {
+    let mut folder_path = path.clone();
+    let mut folder_count = 0;
+
+    while folder_path.exists() {
+        println!("Directory name {:?} already exists...", folder_path);
+        folder_count += 1;
+        let folder_name = format!("{}_{}", path.to_string_lossy(), folder_count);
+        folder_path = PathBuf::from(folder_name);
+        println!("Trying: {:?}...", folder_path);
+    }
+
+    fs::create_dir_all(&folder_path)?;
+    println!("\nSaving images to: {:?}", folder_path);
+
+    Ok(folder_path)
+}
+
 pub fn get_depthmap(left_img_path: &PathBuf, 
                     right_img_path: &PathBuf, 
                     dmin_path: &PathBuf,
                     disp1_path: &PathBuf,
-                    output_fn_or_gen_dm_path: &PathBuf,
+                    output_filename: &PathBuf,
                     fullsize_width: &u32
                 ) {
     let left_img = image::open(left_img_path).expect("Path does not exist, make sure to include extension");
@@ -433,7 +436,7 @@ pub fn get_depthmap(left_img_path: &PathBuf,
     let (width, _) = left_img.dimensions();
     let scaling_factor =   *fullsize_width as f32 / width as f32;
 
-    println!("Finding disparities in RGB channels...");
+    println!("\nFinding disparities in RGB channels...");
     let time_to_find_disparites = Instant::now();
 
     let red_disparities = compute_disparity_map(&left_rgb_channels[0], 
@@ -478,38 +481,46 @@ pub fn get_depthmap(left_img_path: &PathBuf,
     let time_to_find_depths = Instant::now();
     let eval_score = eval(&rgb_disparity_map_8bit, disp1_path);
     
-    println!("\n% Bad Match Pixels (4 pixel threshold): \nRed Ch.: {:?}% Green Ch.: {:?}% Blue Ch.: {:?}%
+    println!("\nPercentage Bad Match Pixels (4 pixel threshold): \nRed Ch.: {:?}% Green Ch.: {:?}% Blue Ch.: {:?}%
         ", eval_score[0]*100_f32, eval_score[1]*100_f32, eval_score[2]*100_f32);
     
-    println!("Evaluated in: {:?}\n", time_to_find_depths.elapsed());
+    println!("Evaluated in: {:?}", time_to_find_depths.elapsed());
     
-    println!("Saving Images...");
+    //println!("Saving Images...");
     let saving_image = Instant::now();
 
-    
+    let output_filename = create_folder_with_increment(&output_filename).expect("Could not create output directory");
 
+    let mut file_name = output_filename.clone();
+    file_name.push("1_Disparity_Map_8bit.png");
+    vec_to_luma8(&avg_ch_disp).save(file_name)
+                              .expect("Could not save Avg_RGB_Disparity_Map_8bit!");
+
+    let mut file_name = output_filename.clone();
+    file_name.push("2_RGB_Disparity_Map_8bit.png");
     vec_to_rgb8_img(&red_disparities, 
                     &green_disparities, 
-                    &blue_disparities).save("RGB_Disparity_Map_8bit.png")
+                    &blue_disparities).save(file_name)
                                       .expect("Could not save RGB_Disparity_Map_8bit!");
 
+    let mut file_name = output_filename.clone();
+    file_name.push("3_RGB_Depth_Map_8bit.png");    
+    vec_to_luma8(&avgerage_depths).save(file_name)
+                                  .expect("Could not save Avg_RGB_Depth_Map_8bit!");
+                                
+    let mut file_name = output_filename.clone();
+    file_name.push("4_RGB_Depth_Map_8bit.png");
     vec_to_rgb8_img(&red_depth, 
                     &green_depth, 
-                    &blue_depth).save("RGB_Depth_Map_8bit.png")
+                    &blue_depth).save(file_name)
                                 .expect("Could not save RGB_Depth_Map_8bit!");
-
-    vec_to_luma8(&avg_ch_disp).save("Avg_RGB_Disparity_Map_8bit.png")
-                              .expect("Could not save Avg_RGB_Disparity_Map_8bit!");
     
-    vec_to_luma8(&avgerage_depths).save("Avg_RGB_Depth_Map_8bit.png")
-                                  .expect("Could not save Avg_RGB_Depth_Map_8bit!");
-    
-    vec_to_luma16(&avgerage_depths).save("Avg_RGB_Depth_Map_16bit.png")
+    let mut file_name = output_filename.clone();
+    file_name.push("5_Depth_Map_16bit.png");
+    vec_to_luma16(&avgerage_depths).save(file_name)
                                    .expect("Could not save Avg_RGB_Depth_Map_16bit!");
 
     println!("Images saved in: {:?}", saving_image.elapsed());
-
-    //println!("{:?}", scaling_factor);
 
 }
 
